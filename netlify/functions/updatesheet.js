@@ -1,8 +1,8 @@
 import { google } from 'googleapis';
 import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
-import { activate } from '@autonomys/auto-utils';
-import { spacePledged } from '@autonomys/auto-consensus';
+import { activate, parseTokenAmount } from '@autonomys/auto-utils';
+import { spacePledged, operators } from '@autonomys/auto-consensus';
 
 const MAX_RETRIES = 3;
 const TIMEOUT = 30000; // 30 seconds
@@ -182,11 +182,31 @@ export default async (req, context) => {
           'mainnet'
         );
 
-        // Fetch transaction byte fee for mainnet (extra columns only for mainnet)
+        // Fetch extra data for mainnet (extra columns only for mainnet)
         console.log('Fetching transactionByteFee for mainnet...');
         const mainnetApi = await activate({ networkId: 'mainnet' });
         const transactionByteFeeData = await mainnetApi.query.transactionFees.transactionByteFee();
         const currentByteFee = transactionByteFeeData.current;
+
+        // Fetch total staked amount
+        console.log('Fetching total staked amount for mainnet...');
+        const allOperators = await operators(mainnetApi);
+        let totalStake = 0;
+        let totalStorageFund = 0;
+        allOperators.forEach(operator => {
+          const details = operator.operatorDetails;
+          if (details) {
+            if (details.currentTotalStake) {
+              const stakeAI3 = Number(parseTokenAmount(details.currentTotalStake.toString())).toFixed(4);
+              totalStake += parseFloat(stakeAI3);
+            }
+            if (details.totalStorageFeeDeposit) {
+              const storageAI3 = Number(parseTokenAmount(details.totalStorageFeeDeposit.toString())).toFixed(4);
+              totalStorageFund += parseFloat(storageAI3);
+            }
+          }
+        });
+        const totalStakedAI3 = Math.round(totalStake + totalStorageFund);
 
         // Calculate derived values for mainnet
         const spacePledgedBytes = Number(mainnetData.spacePledgedData);
@@ -199,7 +219,8 @@ export default async (req, context) => {
           spacePledged: mainnetData.spacePledgedData.toString(),
           spacePledgedPiB,
           spacePledgedPB,
-          feePerGB
+          feePerGB,
+          totalStakedAI3
         });
         results.push(
           sheets.spreadsheets.values.append({
@@ -218,7 +239,8 @@ export default async (req, context) => {
                 mainnetData.stats.macosNodeCount || '',
                 spacePledgedPiB,
                 spacePledgedPB,
-                feePerGB
+                feePerGB,
+                totalStakedAI3
               ]]
             },
           })

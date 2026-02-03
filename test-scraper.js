@@ -1,6 +1,6 @@
 const puppeteer = require('puppeteer');
-const { activate } = require('@autonomys/auto-utils');
-const { spacePledged } = require('@autonomys/auto-consensus');
+const { activate, parseTokenAmount } = require('@autonomys/auto-utils');
+const { spacePledged, operators } = require('@autonomys/auto-consensus');
 
 const TIMEOUT = 30000; // 30 seconds
 
@@ -112,7 +112,10 @@ function formatResults(networkId, data, timestamp, extraData = null) {
     console.log(`  Current Byte Fee:   ${extraData.currentByteFee.toString()}`);
     console.log(`  Fee per GB (AI3):   ${extraData.feePerGB}`);
     
-    row.push(extraData.spacePledgedPiB, extraData.spacePledgedPB, extraData.feePerGB);
+    console.log('\n🥩 Staking:');
+    console.log(`  Total Staked (AI3): ${extraData.totalStakedAI3.toLocaleString()}`);
+    
+    row.push(extraData.spacePledgedPiB, extraData.spacePledgedPB, extraData.feePerGB, extraData.totalStakedAI3);
   }
   
   console.log('\n📝 Row data (as would be written to sheet):');
@@ -159,13 +162,33 @@ async function main() {
         const transactionByteFeeData = await data.api.query.transactionFees.transactionByteFee();
         const currentByteFee = transactionByteFeeData.current;
 
+        // Fetch total staked amount
+        console.log('Fetching total staked amount for mainnet...');
+        const allOperators = await operators(data.api);
+        let totalStake = 0;
+        let totalStorageFund = 0;
+        allOperators.forEach(operator => {
+          const details = operator.operatorDetails;
+          if (details) {
+            if (details.currentTotalStake) {
+              const stakeAI3 = Number(parseTokenAmount(details.currentTotalStake.toString())).toFixed(4);
+              totalStake += parseFloat(stakeAI3);
+            }
+            if (details.totalStorageFeeDeposit) {
+              const storageAI3 = Number(parseTokenAmount(details.totalStorageFeeDeposit.toString())).toFixed(4);
+              totalStorageFund += parseFloat(storageAI3);
+            }
+          }
+        });
+        const totalStakedAI3 = Math.round(totalStake + totalStorageFund);
+
         // Calculate derived values
         const spacePledgedBytes = Number(data.spacePledgedData);
         const spacePledgedPiB = (spacePledgedBytes / Math.pow(2, 50)).toFixed(2);  // bytes to PiB
         const spacePledgedPB = (spacePledgedBytes / Math.pow(1000, 5)).toFixed(2);  // bytes to PB
         const feePerGB = (Number(currentByteFee) * Math.pow(10, 9) / 1e18).toFixed(2);  // fee per byte to fee per GB (in AI3)
 
-        extraData = { spacePledgedPiB, spacePledgedPB, feePerGB, currentByteFee };
+        extraData = { spacePledgedPiB, spacePledgedPB, feePerGB, currentByteFee, totalStakedAI3 };
       }
       
       formatResults(network, data, timestamp, extraData);
