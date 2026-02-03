@@ -181,7 +181,26 @@ export default async (req, context) => {
           'https://telemetry.subspace.network/#list/0x66455a580aabff303720aa83adbe6c44502922251c03ba73686d5245da9e21bd',
           'mainnet'
         );
-        console.log('Mainnet data extracted:', { ...mainnetData.stats, spacePledged: mainnetData.spacePledgedData.toString() });
+
+        // Fetch transaction byte fee for mainnet (extra columns only for mainnet)
+        console.log('Fetching transactionByteFee for mainnet...');
+        const mainnetApi = await activate({ networkId: 'mainnet' });
+        const transactionByteFeeData = await mainnetApi.query.transactionFees.transactionByteFee();
+        const currentByteFee = transactionByteFeeData.current;
+
+        // Calculate derived values for mainnet
+        const spacePledgedBytes = Number(mainnetData.spacePledgedData);
+        const spacePledgedPiB = (spacePledgedBytes / Math.pow(2, 50)).toFixed(2);  // bytes to PiB
+        const spacePledgedPB = (spacePledgedBytes / Math.pow(1000, 5)).toFixed(2);  // bytes to PB
+        const feePerGB = (Number(currentByteFee) * Math.pow(10, 9) / 1e18).toFixed(2);  // fee per byte to fee per GB (in AI3)
+
+        console.log('Mainnet data extracted:', { 
+          ...mainnetData.stats, 
+          spacePledged: mainnetData.spacePledgedData.toString(),
+          spacePledgedPiB,
+          spacePledgedPB,
+          feePerGB
+        });
         results.push(
           sheets.spreadsheets.values.append({
             spreadsheetId,
@@ -196,7 +215,10 @@ export default async (req, context) => {
                 mainnetData.stats.spaceAcresNodeCount || '',
                 mainnetData.stats.linuxNodeCount || '',
                 mainnetData.stats.windowsNodeCount || '',
-                mainnetData.stats.macosNodeCount || ''
+                mainnetData.stats.macosNodeCount || '',
+                spacePledgedPiB,
+                spacePledgedPB,
+                feePerGB
               ]]
             },
           })
